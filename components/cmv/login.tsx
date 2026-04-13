@@ -104,7 +104,7 @@ export function Login() {
                   <Loader2 className="w-6 h-6 animate-spin" />
                 ) : (
                   <>
-                    Aceder ao Painel
+                    Entrar no Painel
                     <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}

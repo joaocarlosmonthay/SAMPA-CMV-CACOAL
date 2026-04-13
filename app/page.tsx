@@ -251,7 +251,7 @@ function CMVApp() {
             {/* Placeholder de Usuário Elegante */}
             <div className="flex items-center gap-3">
               <div className="text-right hidden md:block">
-                <p className="text-xs font-bold text-slate-800">VILHENA</p>
+                <p className="text-xs font-bold text-slate-800">CACOAL</p>
                 <p className="text-[10px] font-bold text-slate-400">Pizzaria Sampa</p>
               </div>
               <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 border-2 border-white shadow-sm rounded-full flex items-center justify-center text-blue-700 font-black">
