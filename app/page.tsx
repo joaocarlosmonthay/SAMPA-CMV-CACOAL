@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { LayoutDashboard, ClipboardList, Package, Menu, Pizza, ReceiptText, LogOut, LineChart, CalendarDays, CheckCircle2, ArrowRight, ShieldCheck, RefreshCw } from "lucide-react"
+import { LayoutDashboard, ClipboardList, Package, Menu, Pizza, ReceiptText, LogOut, LineChart, CalendarDays, CheckCircle2, ArrowRight, ShieldCheck, RefreshCw, AlertOctagon } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { Toaster, toast } from 'react-hot-toast'
 
@@ -22,6 +22,7 @@ const calcularDataFim = (inicio: string) => {
 const getSegundaFeiraPassada = () => {
   const d = new Date()
   const dia = d.getDay()
+  // Calcula a segunda-feira da semana passada como padrão inicial
   const diff = d.getDate() - dia + (dia === 0 ? -6 : 1) - 7
   return new Date(d.setDate(diff)).toISOString().split('T')[0]
 }
@@ -34,7 +35,6 @@ function CMVApp() {
   const [dataInicio, setDataInicio] = useState("")
   const [dataFim, setDataFim] = useState("")
   
-  // ESTADO PARA A TELA DE CARREGAMENTO PREMIUM
   const [isFechando, setIsFechando] = useState(false)
 
   const [produtos, setProdutos] = useState<any[]>([])
@@ -72,9 +72,9 @@ function CMVApp() {
   const handleSalvarProdutoNoBanco = async (novoProd: any) => {
     const { error } = await supabase.from('produtos').insert([novoProd])
     if (error) {
-      toast.error("Vixe, deu erro ao salvar: " + error.message)
+      toast.error("Erro ao salvar produto: " + error.message)
     } else {
-      toast.success("Boa! Ingrediente cadastrado no sistema.")
+      toast.success("Produto cadastrado com sucesso!")
       carregarProdutos()
     }
   }
@@ -110,15 +110,11 @@ function CMVApp() {
     setSemanaAberta(true)
     localStorage.setItem('sampa_semanaAberta', 'true')
     localStorage.setItem('sampa_dataInicio', dataInicio)
-    toast.success("Sistema destravado! Excelente semana de vendas. 🚀")
+    toast.success("Sistema destravado para o período selecionado! 🚀")
   }
 
-  // =======================================================================
-  // A MÁGICA DA TRANSIÇÃO SUAVE (ANIMAÇÃO PREMIUM)
-  // =======================================================================
   const handleSemanaFechada = () => {
     setIsFechando(true)
-
     setTimeout(() => {
       const dataAtual = new Date(dataInicio + "T12:00:00")
       dataAtual.setDate(dataAtual.getDate() + 7)
@@ -133,8 +129,18 @@ function CMVApp() {
       setTela("dashboard")
       
       setIsFechando(false)
-      toast.success("Métrica cravada! O próximo ciclo já está pronto.", { duration: 5000 })
+      toast.success("Ciclo fechado! Próxima semana preparada.", { duration: 5000 })
     }, 2500)
+  }
+
+  // BOTÃO PARA RESETAR A TRAVA CASO PRECISE TROCAR A DATA APÓS JÁ TER ABERTO
+  const handleForcarTrocaData = () => {
+    if (window.confirm("Deseja fechar a semana atual e escolher uma nova data? (Isso não apaga seus lançamentos no banco)")) {
+        localStorage.removeItem('sampa_semanaAberta')
+        localStorage.removeItem('sampa_dataInicio')
+        setSemanaAberta(false)
+        setTela("dashboard")
+    }
   }
 
   const handleLogout = async () => {
@@ -153,13 +159,12 @@ function CMVApp() {
       <Toaster 
         position="bottom-right" 
         toastOptions={{
-          style: { background: '#0F172A', color: '#fff', borderRadius: '16px', fontWeight: 'bold', padding: '16px 24px', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)' },
+          style: { background: '#0F172A', color: '#fff', borderRadius: '16px', fontWeight: 'bold', padding: '16px 24px', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' },
           success: { style: { background: '#059669' } },
           error: { style: { background: '#E11D48' } },
         }} 
       />
 
-      {/* OVERLAY DE CARREGAMENTO PREMIUM */}
       {isFechando && (
         <div className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-md flex items-center justify-center animate-in fade-in duration-500">
           <div className="bg-white/90 backdrop-blur-xl p-12 rounded-[40px] shadow-2xl flex flex-col items-center max-w-sm w-full mx-4 text-center space-y-6 border border-white">
@@ -170,28 +175,25 @@ function CMVApp() {
              </div>
              <div>
                 <h3 className="text-2xl font-black text-slate-800 tracking-tight">Consolidando Dados</h3>
-                <p className="text-slate-500 font-medium mt-2 leading-relaxed">Fechando o estoque e gerando o DRE oficial da semana...</p>
+                <p className="text-slate-500 font-medium mt-2 leading-relaxed">Fechando o ciclo e preparando o dashboard...</p>
              </div>
           </div>
         </div>
       )}
 
-      {/* SIDEBAR CORPORATIVA PREMIUM */}
       {semanaAberta && (
         <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-gradient-to-b from-[#1E3A8A] to-[#0B1736] text-slate-300 transition-transform lg:relative lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} shadow-2xl lg:shadow-none border-r border-blue-900/50`}>
           <div className="flex flex-col h-full p-6">
-            {/* Logo Area */}
             <div className="flex items-center gap-3 mb-10 mt-2 px-2">
               <div className="bg-gradient-to-br from-blue-400 to-blue-600 p-2.5 rounded-2xl shadow-lg shadow-blue-500/30">
                 <Pizza className="w-7 h-7 text-white" />
               </div>
               <div>
                 <h1 className="font-black text-2xl text-white tracking-tight leading-none">Pizzaria Sampa</h1>
-                <span className="text-blue-300 font-bold text-xs tracking-[0.2em] uppercase"></span>
+                <span className="text-blue-300 font-bold text-[10px] tracking-[0.2em] uppercase">Control System</span>
               </div>
             </div>
 
-            {/* Navegação */}
             <nav className="flex-1 space-y-2">
               <p className="px-4 text-[10px] font-black tracking-widest text-blue-400/60 uppercase mb-4 mt-8">Menu Principal</p>
               {[
@@ -206,7 +208,6 @@ function CMVApp() {
                   onClick={() => { setTela(item.id); setSidebarOpen(false); }} 
                   className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl font-bold transition-all relative group ${tela === item.id ? "bg-blue-600/20 text-white" : "hover:bg-white/5 hover:text-white"}`}
                 >
-                  {/* Indicador Lateral Premium */}
                   {tela === item.id && (
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-blue-500 rounded-r-full shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
                   )}
@@ -216,7 +217,6 @@ function CMVApp() {
               ))}
             </nav>
 
-            {/* Rodapé / Sair */}
             <div className="mt-auto pt-6 border-t border-blue-800/50">
               <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 font-bold hover:bg-red-500/10 hover:text-red-400 rounded-2xl transition-all group">
                 <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform"/> 
@@ -227,16 +227,13 @@ function CMVApp() {
         </aside>
       )}
 
-      {/* ÁREA DE CONTEÚDO PRINCIPAL */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         
-        {/* HEADER GLASSMORPHISM */}
         {semanaAberta && (
           <header className="h-20 bg-white/70 backdrop-blur-xl border-b border-slate-200/50 sticky top-0 z-30 flex items-center justify-between px-8 shadow-sm">
             <div className="flex items-center gap-4">
                <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"><Menu /></button>
                
-               {/* Selo de Segurança de Data */}
                <div className="hidden sm:flex items-center gap-4 bg-slate-50 px-5 py-2.5 rounded-2xl border border-slate-200 shadow-inner">
                   <div className="bg-emerald-100 p-1.5 rounded-lg">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -246,9 +243,13 @@ function CMVApp() {
                     <span className="font-black text-slate-800 text-sm mt-0.5">{dataInicio.split('-').reverse().join('/')} <span className="text-slate-300 font-normal mx-1">até</span> {dataFim.split('-').reverse().join('/')}</span>
                   </div>
                </div>
+
+               {/* Botão de Emergência caso queiram trocar a data da semana aberta */}
+               <button onClick={handleForcarTrocaData} className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="Trocar período da semana">
+                  <AlertOctagon className="w-5 h-5" />
+               </button>
             </div>
 
-            {/* Placeholder de Usuário Elegante */}
             <div className="flex items-center gap-3">
               <div className="text-right hidden md:block">
                 <p className="text-xs font-bold text-slate-800">CACOAL</p>
@@ -263,10 +264,9 @@ function CMVApp() {
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-50/50">
           {!semanaAberta ? (
-            /* TELA INICIAL (O "UAU" FACTOR) */
+            /* TELA INICIAL COM DATA SELECIONÁVEL */
             <div className="min-h-[80vh] flex flex-col items-center justify-center relative animate-in fade-in duration-700">
                
-               {/* Efeitos de Luz de Fundo (Padrão Apple/Vercel) */}
                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-500/20 blur-[120px] rounded-full pointer-events-none"></div>
                <div className="absolute top-1/2 left-1/2 -translate-x-[10%] -translate-y-[80%] w-[400px] h-[400px] bg-emerald-400/10 blur-[100px] rounded-full pointer-events-none"></div>
 
@@ -277,15 +277,28 @@ function CMVApp() {
                   </div>
                   
                   <h2 className="text-4xl sm:text-5xl font-black text-slate-800 tracking-tight mb-4">Novo Ciclo Operacional</h2>
-                  <p className="text-slate-500 font-medium text-lg mb-10 max-w-sm">O sistema já preparou as métricas e o calendário oficial para a sua próxima semana.</p>
+                  <p className="text-slate-500 font-medium text-lg mb-10 max-w-sm">Selecione o dia de início da semana para começar os lançamentos.</p>
                   
                   <div className="w-full bg-slate-50 rounded-3xl p-6 border border-slate-100 mb-10 flex flex-col items-center justify-center relative overflow-hidden group">
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Período Selecionado</p>
-                    <div className="flex items-center gap-4 text-2xl sm:text-3xl font-black text-[#1E3A8A]">
-                      <span>{dataInicio.split('-').reverse().join('/')}</span>
-                      <ArrowRight className="w-6 h-6 text-slate-300" />
-                      <span>{dataFim.split('-').reverse().join('/')}</span>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Período de Início</p>
+                    
+                    <div className="flex flex-col items-center gap-2">
+                        {/* INPUT DE DATA NO ESTILO PREMIUM */}
+                        <input 
+                            type="date" 
+                            value={dataInicio} 
+                            onChange={(e) => { 
+                                const novaData = e.target.value;
+                                setDataInicio(novaData);
+                                setDataFim(calcularDataFim(novaData));
+                            }} 
+                            className="bg-transparent text-2xl sm:text-4xl font-black text-[#1E3A8A] text-center outline-none cursor-pointer border-b-4 border-dashed border-blue-200 focus:border-blue-500 transition-all pb-1 hover:scale-105" 
+                        />
+                        <div className="flex items-center gap-4 text-sm font-bold text-slate-400 mt-4">
+                            <span>Fim do Ciclo:</span>
+                            <span className="text-slate-600 bg-slate-200 px-3 py-1 rounded-full">{dataFim.split('-').reverse().join('/')}</span>
+                        </div>
                     </div>
                   </div>
 
@@ -304,7 +317,6 @@ function CMVApp() {
                </div>
             </div>
           ) : (
-            /* CONTEÚDO PRINCIPAL (DASHBOARDS E ABAS) */
             <div className="max-w-[1600px] mx-auto">
               {tela === "dashboard" && <Dashboard dataInicio={dataInicio} dataFim={dataFim} lancamentos={lancamentos} contagemInicial={contagemInicial} contagemFinal={contagemFinal} produtos={produtos} precosReferencia={precosReferencia} />}
               {tela === "cadastros" && <Cadastros produtos={produtos} onAddProduto={handleSalvarProdutoNoBanco} />}
