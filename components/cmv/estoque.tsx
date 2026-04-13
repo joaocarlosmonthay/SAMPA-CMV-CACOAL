@@ -59,7 +59,7 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
       const heranca: any = {}
       eData.filter(d => d.data_contagem === ultimaData).forEach(item => { heranca[item.produto_id] = { qtd: item.quantidade.toString(), valor: item.valor_unitario ? item.valor_unitario.toString() : "0" } })
       setContagem(heranca)
-      toast.success("Massa! Estoque final anterior puxado com sucesso.")
+      toast.success("Estoque final anterior puxado com sucesso.")
     } else { 
       toast.error("Nenhum estoque anterior encontrado.") 
     }
@@ -69,7 +69,7 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
     if (!window.confirm("Certeza que quer apagar isso permanentemente?")) return
     const { error } = await supabase.from(tabela).delete().eq('id', id)
     if (error) {
-        toast.error("Ih, não deu pra apagar: " + error.message)
+        toast.error("falha ao apagar: " + error.message)
     } else {
         toast.success("Apagado com sucesso!")
         onChange()
@@ -223,7 +223,7 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
     if (fData) await supabase.from('financas_semanais').update({ faturamento: fat }).eq('id', fData.id)
     else await supabase.from('financas_semanais').insert([{ data_inicio: dataInicio, data_fim: dataFim, faturamento: fat }])
     
-    toast.success("Dinheiro na conta! Faturamento atualizado. 💸")
+    toast.success("Faturamento atualizado. 💸")
     setSalvando(false)
     onChange()
   }

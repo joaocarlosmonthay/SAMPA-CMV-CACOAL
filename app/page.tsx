@@ -110,7 +110,7 @@ function CMVApp() {
     setSemanaAberta(true)
     localStorage.setItem('sampa_semanaAberta', 'true')
     localStorage.setItem('sampa_dataInicio', dataInicio)
-    toast.success("Sistema destravado para o período selecionado! 🚀")
+    toast.success("Período aberto com sucesso! Você pode começar a lançar as operações.", { duration: 5000 })
   }
 
   const handleSemanaFechada = () => {
@@ -129,7 +129,7 @@ function CMVApp() {
       setTela("dashboard")
       
       setIsFechando(false)
-      toast.success("Ciclo fechado! Próxima semana preparada.", { duration: 5000 })
+      toast.success("Período fechado! Próxima semana preparada.", { duration: 5000 })
     }, 2500)
   }
 
