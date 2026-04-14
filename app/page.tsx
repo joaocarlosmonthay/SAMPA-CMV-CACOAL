@@ -52,6 +52,7 @@ function CMVApp() {
   const [semanaOficial, setSemanaOficial] = useState<string>("") 
 
   const [produtos, setProdutos] = useState<any[]>([])
+  const [categorias, setCategorias] = useState<any[]>([]) // RECUPERADO O ESTADO DAS CATEGORIAS
   const [lancamentos, setLancamentos] = useState<any>({ faturamento: 0, compras: [], saidas: [], outrosCustos: {} })
   const [contagemInicial, setContagemInicial] = useState<ContagemEstoque>({})
   const [contagemFinal, setContagemFinal] = useState<ContagemEstoque>({})
@@ -86,7 +87,7 @@ function CMVApp() {
         setDataFim(calcularDataFim(dataSugerida))
         setSemanaAberta(false)
       }
-      carregarProdutos()
+      carregarTudo()
     }
     initApp()
   }, [])
@@ -97,17 +98,54 @@ function CMVApp() {
     }
   }, [dataInicio, dataFim, semanaAberta])
 
-  const carregarProdutos = async () => {
-    const { data } = await supabase.from('produtos').select('*').order('nome')
-    if (data) setProdutos(data)
+  // FUNÇÃO QUE CARREGA OS PRODUTOS E AS CATEGORIAS JUNTOS
+  const carregarTudo = async () => {
+    const [{ data: prods }, { data: cats }] = await Promise.all([
+      supabase.from('produtos').select('*').order('nome'),
+      supabase.from('categorias').select('*').order('nome')
+    ])
+    if (prods) setProdutos(prods)
+    if (cats) setCategorias(cats)
   }
 
+  // --- FUNÇÕES DE CATEGORIA (Que tinham sumido do arquivo) ---
+  const handleSalvarCategoria = async (nome: string) => {
+    if (isReadOnly) return toast.error("Período travado!")
+    const { error } = await supabase.from('categorias').insert([{ nome }])
+    if (error) toast.error("Erro ao salvar categoria. Pode já existir.")
+    else { toast.success("Categoria salva!"); carregarTudo(); }
+  }
+
+  const handleExcluirCategoria = async (id: number) => {
+    if (isReadOnly) return toast.error("Período travado!")
+    if (!confirm("Excluir esta categoria?")) return
+    const { error } = await supabase.from('categorias').delete().eq('id', id)
+    if (error) toast.error("Erro ao excluir!")
+    else { toast.success("Categoria removida!"); carregarTudo(); }
+  }
+
+  // --- FUNÇÕES DE PRODUTO ---
   const handleSalvarProdutoNoBanco = async (novoProd: any) => {
     if (isReadOnly) return toast.error("Período travado!")
     const { id, ...produtoLimpo } = novoProd
     const { error } = await supabase.from('produtos').insert([produtoLimpo])
     if (error) toast.error("Erro ao salvar: " + error.message)
-    else { toast.success("Produto salvo!"); carregarProdutos(); }
+    else { toast.success("Produto salvo!"); carregarTudo(); }
+  }
+
+  const handleEditarProdutoNoBanco = async (id: number, dadosEditados: any) => {
+    if (isReadOnly) return toast.error("Período travado!")
+    const { error } = await supabase.from('produtos').update(dadosEditados).eq('id', id)
+    if (error) toast.error("Erro ao atualizar: " + error.message)
+    else { toast.success("Produto atualizado!"); carregarTudo(); }
+  }
+
+  const handleExcluirProdutoNoBanco = async (id: number) => {
+    if (isReadOnly) return toast.error("Período travado!")
+    if (!confirm("Tem certeza que deseja excluir este produto?")) return
+    const { error } = await supabase.from('produtos').delete().eq('id', id)
+    if (error) toast.error("Erro ao excluir!")
+    else { toast.success("Produto removido!"); carregarTudo(); }
   }
 
   const carregarDadosDoBanco = async () => {
@@ -232,7 +270,7 @@ function CMVApp() {
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-4 flex items-center gap-1">
                       Data de Início <Edit3 className="w-3 h-3"/>
                     </label>
-                    {/* CAMPO HABILITADO AGORA */}
+                    {/* CAMPO HABILITADO MANTIDO */}
                     <input 
                       type="date" 
                       value={dataInicio} 
@@ -247,12 +285,26 @@ function CMVApp() {
                   <button onClick={iniciarSemana} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black text-lg hover:scale-[1.02] hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2">
                     Confirmar e Acessar <ArrowRight className="w-5 h-5"/>
                   </button>
-               </div>
+               </div> 
             </div>
           ) : (
             <div className="max-w-7xl mx-auto">
               {tela === "dashboard" && <Dashboard dataInicio={dataInicio} dataFim={dataFim} lancamentos={lancamentos} contagemInicial={contagemInicial} contagemFinal={contagemFinal} produtos={produtos} />}
-              {tela === "cadastros" && <Cadastros produtos={produtos} onAddProduto={handleSalvarProdutoNoBanco} />}
+              
+              {/* AS FUNÇÕES AGORA FORAM PASSADAS CORRETAMENTE PARA OS CADASTROS */}
+              {tela === "cadastros" && (
+                <Cadastros 
+                  produtos={produtos} 
+                  categorias={categorias} 
+                  onAddProduto={handleSalvarProdutoNoBanco} 
+                  onEditProduto={handleEditarProdutoNoBanco} 
+                  onDeleteProduto={handleExcluirProdutoNoBanco} 
+                  onAddCategoria={handleSalvarCategoria} 
+                  onDeleteCategoria={handleExcluirCategoria} 
+                  isReadOnly={isReadOnly} 
+                />
+              )}
+              
               {tela === "outros-custos" && <OutrosCustosDRE data={lancamentos} dataInicio={dataInicio} dataFim={dataFim} onChange={carregarDadosDoBanco} isReadOnly={isReadOnly} />}
               {tela === "relatorios" && <Relatorios produtos={produtos} />}
               {tela === "estoque" && (
