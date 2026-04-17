@@ -19,7 +19,6 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
   const [historicoSemanas, setHistoricoSemanas] = useState<any[]>([])
   const [modalAberto, setModalAberto] = useState<"compras" | "consumo" | null>(null)
 
-  // --- CÁLCULOS DA SEMANA ATUAL ---
   const faturamentoAtual = lancamentos?.faturamento || 0
   const comprasAtual = (lancamentos?.compras || []).reduce((acc: number, c: any) => acc + parseFloat(c.valorTotal || 0), 0)
 
@@ -32,7 +31,24 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
 
   const estInicialAtual = getValorEstoque(contagemInicial)
   const estFinalAtual = getValorEstoque(contagemFinal)
-  const cmvRealR$ = estInicialAtual + comprasAtual - estFinalAtual
+
+  let cmvRealR$ = 0;
+  if (produtos?.length > 0) {
+    produtos.forEach((p: any) => {
+      if (p.producao_interna) return; 
+      
+      const qI = contagemInicial[p.id]?.qtd ? parseFloat(contagemInicial[p.id].qtd) : 0;
+      const vI = contagemInicial[p.id]?.valor ? parseFloat(contagemInicial[p.id].valor) : 0;
+      const qF = contagemFinal[p.id]?.qtd ? parseFloat(contagemFinal[p.id].qtd) : 0;
+      const vF = contagemFinal[p.id]?.valor ? parseFloat(contagemFinal[p.id].valor) : 0;
+      
+      const compProd = (lancamentos?.compras || []).filter((c: any) => c.produto === p.nome);
+      const totalComp = compProd.reduce((acc: number, c: any) => acc + parseFloat(c.valorTotal), 0);
+      
+      cmvRealR$ += (qI * vI) + totalComp - (qF * vF);
+    });
+  }
+  
   const cmvRealPerc = faturamentoAtual > 0 ? (cmvRealR$ / faturamentoAtual) * 100 : 0
 
   let cmvCozinhaRS = 0, cmvBebidasRS = 0
@@ -40,14 +56,22 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
 
   if (produtos?.length > 0) {
     const calcCmvPorGrupo = (isBebida: boolean) => {
-      const ids = produtos.filter((p: any) => isBebida ? p.grupo === "Bebidas" : (p.grupo !== "Bebidas" && p.grupo !== "Embalagens" && p.grupo !== "Limpeza")).map((p: any) => p.id)
-      const init = Object.entries(contagemInicial || {}).reduce((acc, [id, item]: any) => ids.includes(Number(id)) ? acc + (parseFloat(item.qtd||0) * parseFloat(item.valor||0)) : acc, 0)
-      const fin = Object.entries(contagemFinal || {}).reduce((acc, [id, item]: any) => ids.includes(Number(id)) ? acc + (parseFloat(item.qtd||0) * parseFloat(item.valor||0)) : acc, 0)
-      const comp = (lancamentos?.compras || []).reduce((acc: number, c: any) => {
-        const prod = produtos.find((p:any) => p.nome === c.produto)
-        return prod && ids.includes(prod.id) ? acc + parseFloat(c.valorTotal) : acc
-      }, 0)
-      return init + comp - fin
+      let total = 0;
+      produtos.forEach((p: any) => {
+        if (p.producao_interna) return; 
+        const belongs = isBebida ? p.grupo === "Bebidas" : (p.grupo !== "Bebidas" && p.grupo !== "Embalagens" && p.grupo !== "Limpeza" && p.grupo !== "Outros");
+        if (!belongs) return;
+
+        const qI = contagemInicial[p.id]?.qtd ? parseFloat(contagemInicial[p.id].qtd) : 0;
+        const vI = contagemInicial[p.id]?.valor ? parseFloat(contagemInicial[p.id].valor) : 0;
+        const qF = contagemFinal[p.id]?.qtd ? parseFloat(contagemFinal[p.id].qtd) : 0;
+        const vF = contagemFinal[p.id]?.valor ? parseFloat(contagemFinal[p.id].valor) : 0;
+        const compProd = (lancamentos?.compras || []).filter((c: any) => c.produto === p.nome);
+        const totalComp = compProd.reduce((acc: number, c: any) => acc + parseFloat(c.valorTotal), 0);
+
+        total += (qI * vI) + totalComp - (qF * vF);
+      });
+      return total;
     }
     cmvCozinhaRS = calcCmvPorGrupo(false)
     cmvBebidasRS = calcCmvPorGrupo(true)
@@ -55,19 +79,19 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
     percBebidas = faturamentoAtual > 0 ? (cmvBebidasRS / faturamentoAtual) * 100 : 0
   }
 
-  // --- BUSCA DO HISTÓRICO (CORRIGIDO E SINCRONIZADO) ---
   useEffect(() => {
     const buscarHistorico = async () => {
       setLoadingHistorico(true)
       const { data: financas } = await supabase.from('financas_semanais').select('*').order('data_inicio', { ascending: false }).limit(5)
       if (!financas || financas.length === 0) { setLoadingHistorico(false); return }
 
-      const datas = financas.map(f => f.data_inicio)
-      const { data: dbCompras } = await supabase.from('compras').select('*').in('data_compra', datas)
-      const { data: dbEstoques } = await supabase.from('estoques').select('*').in('data_contagem', datas)
+      const oldestDate = financas[financas.length - 1].data_inicio
+      const newestDate = financas[0].data_fim || dataFim
+
+      const { data: dbCompras } = await supabase.from('compras').select('*').gte('data_compra', oldestDate).lte('data_compra', newestDate)
+      const { data: dbEstoques } = await supabase.from('estoques').select('*').gte('data_contagem', oldestDate).lte('data_contagem', newestDate)
 
       const historyData = financas.reverse().map((f, index) => {
-        // Se a data do loop for igual à data que o usuário está vendo na tela, USAMOS OS DADOS VIVOS DA TELA
         if (f.data_inicio === dataInicio) {
           return {
             id: f.data_inicio,
@@ -82,14 +106,26 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
           }
         }
 
-        // Se for de semanas anteriores, usamos o banco de dados puro, mas multiplicando Qtd * Unitário
-        const myCompras = dbCompras?.filter(c => c.data_compra === f.data_inicio) || []
-        const myEst = dbEstoques?.filter(e => e.data_contagem === f.data_inicio) || []
+        const myCompras = dbCompras?.filter(c => c.data_compra >= f.data_inicio && c.data_compra <= f.data_fim) || []
+        const myEst = dbEstoques?.filter(e => e.data_contagem >= f.data_inicio && e.data_contagem <= f.data_fim) || []
         
         const totComp = myCompras.reduce((a, c) => a + (parseFloat(c.quantidade) * parseFloat(c.valor_unitario)), 0)
         const eIni = myEst.filter(e => e.tipo_contagem === 'Inicial').reduce((a, e) => a + (parseFloat(e.quantidade) * parseFloat(e.valor_unitario)), 0)
         const eFin = myEst.filter(e => e.tipo_contagem === 'Final').reduce((a, e) => a + (parseFloat(e.quantidade) * parseFloat(e.valor_unitario)), 0)
-        const cmvRS = eIni + totComp - eFin
+        
+        let cmvRS = 0;
+        produtos?.forEach((p: any) => {
+          if (p.producao_interna) return;
+          const eI = myEst.find(e => e.produto_id === p.id && e.tipo_contagem === 'Inicial');
+          const eF = myEst.find(e => e.produto_id === p.id && e.tipo_contagem === 'Final');
+          const cP = myCompras.filter(c => c.produto_id === p.id);
+          const qI = eI ? parseFloat(eI.quantidade) : 0;
+          const vI = eI ? parseFloat(eI.valor_unitario) : 0;
+          const qF = eF ? parseFloat(eF.quantidade) : 0;
+          const vF = eF ? parseFloat(eF.valor_unitario) : vI;
+          const totalC = cP.reduce((acc, c) => acc + (parseFloat(c.quantidade) * parseFloat(c.valor_unitario)), 0);
+          cmvRS += (qI * vI) + totalC - (qF * vF);
+        });
 
         const dFinal = new Date(f.data_inicio + "T12:00:00")
         dFinal.setDate(dFinal.getDate() + 6)
@@ -111,9 +147,8 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
       setLoadingHistorico(false)
     }
     
-    // O useEffect agora reage a TUDO: data, lançamentos e estoques
-    if (dataInicio) buscarHistorico()
-  }, [dataInicio, dataFim, lancamentos, contagemInicial, contagemFinal])
+    if (dataInicio && produtos.length > 0) buscarHistorico()
+  }, [dataInicio, dataFim, lancamentos, contagemInicial, contagemFinal, produtos])
 
   const chartData = historicoSemanas.map(s => ({
     name: s.semana,
@@ -124,7 +159,6 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
   return (
     <div className="space-y-6 font-sans pb-10">
       
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-[24px] shadow-sm border border-slate-200">
         <div>
           <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
@@ -138,7 +172,6 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
         </div>
       </div>
 
-      {/* FLUXO DO ESTOQUE */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
           <p className="text-[10px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1"><Warehouse className="w-3 h-3"/> Estoque Inicial</p>
@@ -152,13 +185,13 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
           <p className="text-[10px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1"><Package className="w-3 h-3 text-blue-500"/> (-) Estoque Final</p>
           <p className="text-2xl font-black text-slate-700">{formatBRL(estFinalAtual)}</p>
         </div>
-        <div className="bg-blue-600 p-5 rounded-3xl shadow-blue-200 shadow-lg text-white">
+        <div className="bg-blue-600 p-5 rounded-3xl shadow-blue-200 shadow-lg text-white relative">
           <p className="text-[10px] font-black text-blue-100 uppercase mb-1">(=) CMV Realizado</p>
           <p className="text-2xl font-black">{formatBRL(cmvRealR$)}</p>
+          <span className="absolute bottom-2 right-4 text-[8px] text-blue-200 font-bold">*Exclui Subprodutos Fabricados</span>
         </div>
       </div>
 
-      {/* INDICADORES PRINCIPAIS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm relative overflow-hidden">
@@ -210,7 +243,6 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
         </div>
       </div>
 
-      {/* EVOLUÇÃO SEMANAL */}
       <div className="bg-white rounded-[32px] shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
           <h3 className="font-black text-lg text-slate-800 flex items-center gap-2"><History className="w-5 h-5 text-blue-600"/> Evolução das Últimas 5 Semanas</h3>
@@ -247,7 +279,10 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
                 {historicoSemanas.map(s => <td key={s.id} className="py-4 px-6 text-right text-slate-400">{formatBRL(s.estoqueFinal)}</td>)}
               </tr>
               <tr className="bg-blue-50/30">
-                <td className="py-4 px-6 font-bold text-slate-700">CMV Realizado (R$)</td>
+                <td className="py-4 px-6 font-bold text-slate-700 flex flex-col">
+                  CMV Realizado (R$)
+                  <span className="text-[9px] font-black text-blue-500">*Sem Subprodutos</span>
+                </td>
                 {historicoSemanas.map(s => <td key={s.id} className="py-4 px-6 text-right font-black text-slate-800">{formatBRL(s.cmvValor)}</td>)}
               </tr>
               <tr className="bg-slate-50">
@@ -265,7 +300,6 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
         </div>
       </div>
 
-      {/* GRÁFICO E RANKING */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-[400px]">
           <div className="flex justify-between items-center mb-6">
@@ -303,7 +337,6 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
         </div>
       </div>
 
-      {/* MODAL AUDITORIA */}
       {modalAberto === "compras" && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">

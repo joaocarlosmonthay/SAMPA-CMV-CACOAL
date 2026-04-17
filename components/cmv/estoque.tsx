@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Package, ShoppingCart, DollarSign, Trash2, Save, CheckCircle2, ArrowDownToLine, Lock } from "lucide-react"
+import { Package, ShoppingCart, DollarSign, Trash2, Save, CheckCircle2, ArrowDownToLine, Lock, Pencil, X } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "react-hot-toast"
 
@@ -26,6 +26,8 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
   const [novoLancamento, setNovoLancamento] = useState({ produto: "", quantidade: "", valorTotal: "", motivo: "Quebra/Desperdício" })
   const [faturamento, setFaturamento] = useState(data.faturamento?.toString() || "")
   const [contagem, setContagem] = useState<ContagemEstoque>({})
+  
+  const [editandoCompraId, setEditandoCompraId] = useState<number | null>(null)
 
   useEffect(() => {
     setContagem(aba === "inicial" ? contagemInicial : contagemFinal)
@@ -38,10 +40,37 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
   const handleSalvarCompra = async () => {
     if (isReadOnly) return toast.error("Período travado para edições!")
     if (!novoLancamento.produto || !novoLancamento.quantidade || !novoLancamento.valorTotal) return toast.error("Preencha todos os campos!")
+    
     const prod = produtos.find((p: any) => p.nome === novoLancamento.produto)
+    if (!prod) return toast.error("Produto inválido!")
+
     const vTotal = parseFloat(novoLancamento.valorTotal.replace(',', '.')), qtd = parseFloat(novoLancamento.quantidade.replace(',', '.'))
-    await supabase.from('compras').insert([{ produto_id: prod.id, quantidade: qtd, valor_unitario: vTotal / qtd, data_compra: dataInicio }])
-    toast.success("Compra salva!"); setNovoLancamento({ produto: "", quantidade: "", valorTotal: "", motivo: "Quebra/Desperdício" }); onChange();
+    
+    if (editandoCompraId) {
+      await supabase.from('compras').update({ 
+        produto_id: prod.id, 
+        quantidade: qtd, 
+        valor_unitario: vTotal / qtd 
+      }).eq('id', editandoCompraId)
+      toast.success("Compra atualizada!")
+      setEditandoCompraId(null)
+    } else {
+      await supabase.from('compras').insert([{ 
+        produto_id: prod.id, 
+        quantidade: qtd, 
+        valor_unitario: vTotal / qtd, 
+        data_compra: dataInicio 
+      }])
+      toast.success("Compra salva!")
+    }
+
+    setNovoLancamento({ produto: "", quantidade: "", valorTotal: "", motivo: "Quebra/Desperdício" })
+    onChange()
+  }
+
+  const cancelarEdicaoCompra = () => {
+    setEditandoCompraId(null)
+    setNovoLancamento({ produto: "", quantidade: "", valorTotal: "", motivo: "Quebra/Desperdício" })
   }
 
   const handleSalvarSaida = async () => {
@@ -59,7 +88,6 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
     toast.success("Removido com sucesso!"); onChange();
   }
 
-  // A FUNÇÃO BLINDADA: Nunca mais vai falhar em silêncio.
   const handleSalvarContagem = async () => {
     if (isReadOnly) return toast.error("Período travado para edições!")
     const tipo = aba === "inicial" ? "Inicial" : "Final"
@@ -67,21 +95,17 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
     toast.loading(`Salvando Estoque ${tipo}...`, { id: "salva-estoque" })
 
     try {
-      // Deleta o registro anterior para evitar duplicação
       const { error: errDel } = await supabase.from('estoques').delete().eq('tipo_contagem', tipo).gte('data_contagem', dataInicio).lte('data_contagem', dataFim)
       if (errDel) throw errDel;
 
       const inserts = Object.entries(contagem).map(([id, d]) => {
-        // Pega com segurança e previne undefined
         const qtdStr = d && d.qtd ? String(d.qtd).trim() : "";
         let valStr = d && d.valor ? String(d.valor).trim() : "";
 
-        // Se for Final, espelha do inicial
         if (tipo === "Final") {
           valStr = contagemInicial[parseInt(id)]?.valor ? String(contagemInicial[parseInt(id)].valor).trim() : "0";
         }
 
-        // Tenta converter, se der errado por sujeira, vira NaN (que a gente filtra na linha de baixo)
         const q = parseFloat(qtdStr.replace(',', '.'));
         const v = parseFloat(valStr.replace(',', '.'));
 
@@ -92,7 +116,7 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
           tipo_contagem: tipo,
           data_contagem: dataInicio
         }
-      }).filter(i => i.quantidade !== null) // Filtro: só vai para o banco o que realmente for número.
+      }).filter(i => i.quantidade !== null)
 
       if (inserts.length > 0) {
         const { error: insErr } = await supabase.from('estoques').insert(inserts)
@@ -105,7 +129,6 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
       await onChange();
 
     } catch (error: any) {
-      // Se algo bizarro acontecer no banco, ele mostra na tela.
       toast.error("Erro no sistema ao salvar: " + error.message, { id: "salva-estoque", duration: 5000 });
     }
   }
@@ -125,7 +148,7 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
         novoEstoque[e.produto_id] = { qtd: e.quantidade.toString(), valor: e.valor_unitario.toString() }
       })
       setContagem(novoEstoque)
-      toast.success("Dados carregados na tela! Clique em SALVAR MANUALMENTE para confirmar.")
+      toast.success("Dados carregados na tela! Clique em SALVAR CONTAGEM lá embaixo para confirmar.")
     } else {
       toast.error("Nenhum fechamento encontrado na semana anterior.")
     }
@@ -157,7 +180,7 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
           { id: "faturamento", label: "Faturamento" },
           { id: "final", label: "Estoque Final" }
         ].map(t => (
-          <button key={t.id} onClick={() => setAba(t.id as any)} className={`flex-1 min-w-[140px] py-3 px-4 rounded-xl font-bold text-sm transition-all ${aba === t.id ? "bg-blue-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"}`}>
+          <button key={t.id} onClick={() => {setAba(t.id as any); cancelarEdicaoCompra()}} className={`flex-1 min-w-[140px] py-3 px-4 rounded-xl font-bold text-sm transition-all ${aba === t.id ? "bg-blue-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"}`}>
             {t.label}
           </button>
         ))}
@@ -168,30 +191,80 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
         {aba === "compras" && (
           <div className="space-y-6">
             {!isReadOnly && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-slate-50 p-6 rounded-2xl border">
+              <div className={`grid grid-cols-1 md:grid-cols-4 gap-4 items-end p-6 rounded-2xl border relative ${editandoCompraId ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-200'}`}>
+                
+                {editandoCompraId && (
+                  <div className="absolute -top-3 left-4 bg-blue-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider">
+                    Editando Compra Existente
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">Insumo</label>
-                  <select className="p-3 rounded-xl border font-bold outline-none focus:border-blue-500" value={novoLancamento.produto} onChange={e => setNovoLancamento({ ...novoLancamento, produto: e.target.value })}>
+                  <label className={`text-[10px] font-black uppercase ${editandoCompraId ? 'text-blue-600' : 'text-slate-500'}`}>Insumo</label>
+                  <select className={`p-3 rounded-xl border font-bold outline-none ${editandoCompraId ? 'border-blue-300 focus:border-blue-600' : 'focus:border-blue-500'}`} value={novoLancamento.produto} onChange={e => setNovoLancamento({ ...novoLancamento, produto: e.target.value })}>
                     <option value="">Selecione...</option>{produtos.map((p: any) => <option key={p.id}>{p.nome}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase">Qtd Comprada</label>
-                  <input type="text" placeholder="0" className="p-3 rounded-xl border font-bold outline-none focus:border-blue-500" value={novoLancamento.quantidade} onChange={e => setNovoLancamento({ ...novoLancamento, quantidade: e.target.value })} />
+                  <label className={`text-[10px] font-black uppercase ${editandoCompraId ? 'text-blue-600' : 'text-slate-500'}`}>Qtd Comprada</label>
+                  <input type="text" placeholder="0" className={`p-3 rounded-xl border font-bold outline-none ${editandoCompraId ? 'border-blue-300 focus:border-blue-600' : 'focus:border-blue-500'}`} value={novoLancamento.quantidade} onChange={e => setNovoLancamento({ ...novoLancamento, quantidade: e.target.value })} />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1">R$ Total da Nota</label>
+                  <label className={`text-[10px] font-black uppercase flex items-center gap-1 ${editandoCompraId ? 'text-blue-600' : 'text-slate-500'}`}>R$ Total da Nota</label>
                   <input type="text" placeholder="0,00" className="p-3 rounded-xl border font-bold bg-amber-50 outline-none focus:border-amber-500" value={novoLancamento.valorTotal} onChange={e => setNovoLancamento({ ...novoLancamento, valorTotal: e.target.value })} />
                 </div>
-                <button onClick={handleSalvarCompra} className="bg-blue-600 text-white p-3 rounded-xl font-black hover:bg-blue-700 transition-colors flex justify-center items-center gap-2"><ShoppingCart className="w-5 h-5" /> LANÇAR</button>
+                
+                <div className="flex items-center gap-2">
+                  <button onClick={handleSalvarCompra} className="flex-1 bg-blue-600 text-white p-3 rounded-xl font-black hover:bg-blue-700 transition-colors flex justify-center items-center gap-2">
+                    <ShoppingCart className="w-5 h-5" /> {editandoCompraId ? "ATUALIZAR" : "LANÇAR"}
+                  </button>
+                  {editandoCompraId && (
+                    <button onClick={cancelarEdicaoCompra} className="p-3 bg-white border border-slate-300 text-slate-500 rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-all" title="Cancelar Edição">
+                      <X className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
               </div>
             )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b text-slate-400 font-black uppercase text-[10px]"><tr><th className="pb-3 text-left">Item Comprado</th><th className="pb-3 text-center">Quantidade</th><th className="pb-3 text-right">Valor Total</th>{!isReadOnly && <th className="pb-3 text-right">Ação</th>}</tr></thead>
+                <thead className="border-b text-slate-400 font-black uppercase text-[10px]">
+                  <tr>
+                    <th className="pb-3 text-left">Item Comprado</th>
+                    <th className="pb-3 text-center">Quantidade</th>
+                    <th className="pb-3 text-right">Valor Total</th>
+                    {!isReadOnly && <th className="pb-3 text-right">Ação</th>}
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-slate-50">
                   {data.compras.map((c: any) => (
-                    <tr key={c.id} className="hover:bg-slate-50 transition-colors group"><td className="py-4 font-bold text-slate-700">{c.produto}</td><td className="py-4 text-center font-bold text-slate-500">{c.quantidade}</td><td className="py-4 text-right font-black text-blue-600">{formatBRL(c.valorTotal)}</td>{!isReadOnly && <td className="py-4 text-right"><button onClick={() => handleExcluir(c.id, 'compras')} className="p-2 text-slate-300 hover:text-red-600 bg-white shadow-sm border border-slate-100 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button></td>}</tr>
+                    <tr key={c.id} className="hover:bg-slate-50 transition-colors group">
+                      <td className="py-4 font-bold text-slate-700">{c.produto}</td>
+                      <td className="py-4 text-center font-bold text-slate-500">{c.quantidade}</td>
+                      <td className="py-4 text-right font-black text-blue-600">{formatBRL(c.valorTotal)}</td>
+                      {!isReadOnly && (
+                        <td className="py-4 text-right flex justify-end gap-2">
+                          <button 
+                            onClick={() => {
+                              setEditandoCompraId(c.id);
+                              setNovoLancamento({ produto: c.produto, quantidade: c.quantidade.toString(), valorTotal: c.valorTotal.toString(), motivo: "Quebra/Desperdício" });
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }} 
+                            className="p-2 text-slate-300 hover:text-blue-600 bg-white shadow-sm border border-slate-100 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            title="Editar Compra"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleExcluir(c.id, 'compras')} 
+                            className="p-2 text-slate-300 hover:text-red-600 bg-white shadow-sm border border-slate-100 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            title="Apagar Compra"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
                   ))}
                 </tbody>
               </table>
@@ -247,7 +320,6 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
                 {aba === "inicial" && !isReadOnly && (
                   <button onClick={handlePuxarAnterior} className="bg-white border border-slate-300 text-slate-700 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-100 transition-colors shadow-sm"><ArrowDownToLine className="w-4 h-4" /> PUXAR ANTERIOR</button>
                 )}
-                {!isReadOnly && <button onClick={handleSalvarContagem} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"><Save className="w-4 h-4" /> SALVAR CONTAGEM</button>}
               </div>
             </div>
 
@@ -284,14 +356,26 @@ export function Estoque({ dataInicio, dataFim, produtos, data, contagemInicial, 
               ))}
             </div>
 
-            {/* BOTÃO DE ENCERRAR SEMANA AGORA FICA AQUI NO ESTOQUE FINAL */}
-            {aba === "final" && !isReadOnly && (
-              <div className="mt-10 pt-8 border-t border-slate-100 flex flex-col items-center">
-                <h4 className="text-lg font-black text-slate-800 mb-2">Finalizou a contagem?</h4>
-                <p className="text-sm text-slate-500 font-medium mb-6 text-center max-w-md">Lembre-se de salvar a contagem acima antes de encerrar o ciclo. O encerramento trava esta semana contra novas edições.</p>
-                <button onClick={onSemanaFechada} className="w-full max-w-sm bg-slate-900 text-white py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 hover:bg-slate-800 transition-transform hover:scale-105 shadow-xl">
-                  <CheckCircle2 className="w-6 h-6" /> ENCERRAR SEMANA OFICIALMENTE
-                </button>
+            {!isReadOnly && (
+              <div className="mt-10 pt-8 border-t border-slate-200 flex flex-col items-center bg-slate-50 p-6 rounded-3xl shadow-inner">
+                <h4 className="text-xl font-black text-slate-800 mb-2">Finalizou a digitação do estoque {aba}?</h4>
+                <p className="text-sm text-slate-500 font-medium mb-6 text-center max-w-md">
+                  {aba === "final" 
+                    ? "Salve sua contagem e, quando tudo estiver correto, encerre o ciclo." 
+                    : "Lembre-se de salvar sua contagem para não perder os dados digitados."}
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-4 w-full max-w-2xl justify-center">
+                  <button onClick={handleSalvarContagem} className="flex-1 bg-blue-600 text-white py-5 rounded-2xl font-black text-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition-transform hover:scale-[1.02] shadow-xl shadow-blue-500/30">
+                    <Save className="w-6 h-6" /> SALVAR CONTAGEM
+                  </button>
+                  
+                  {aba === "final" && (
+                    <button onClick={onSemanaFechada} className="flex-1 bg-slate-900 text-white py-5 rounded-2xl font-black text-lg flex items-center justify-center gap-2 hover:bg-slate-800 transition-transform hover:scale-[1.02] shadow-xl">
+                      <CheckCircle2 className="w-6 h-6" /> ENCERRAR CICLO
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
