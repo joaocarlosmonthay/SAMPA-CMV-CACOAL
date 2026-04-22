@@ -1,266 +1,284 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { PlusCircle, CheckCircle2, Package, Pencil, Trash2, X, Tags, Upload, Beaker, FolderTree } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { Package, Plus, Search, Tag, Layers, Edit2, Trash2, X, Save, FolderTree, Beaker } from "lucide-react"
 import { toast } from "react-hot-toast"
+import { supabase } from "@/lib/supabase"
 
-const UNIDADES = ["Kg", "Litro", "Unidade", "Pacote", "CX", "PCT"]
-
-export type Produto = {
-  id: number; nome: string; grupo: string; unidade: string; producao_interna: boolean;
-}
-
-interface CadastrosProps {
-  produtos: Produto[]; 
-  onRefresh: () => void;
-  isReadOnly: boolean;
-}
-
-export function Cadastros({ produtos, onRefresh, isReadOnly }: CadastrosProps) {
-  const [aba, setAba] = useState<"produtos" | "categorias">("produtos")
-  const [categoriasDB, setCategoriasDB] = useState<{id: number, nome: string}[]>([])
+export function Cadastros({ produtos, onRefresh, isReadOnly }: any) {
+  const [abaCadastros, setAbaCadastros] = useState<"insumos" | "categorias">("insumos")
   
+  // MÁGICA: Extrai os grupos dinamicamente direto dos produtos que já existem no banco!
+  const categoriasDoBanco = Array.from(new Set(produtos?.map((p: any) => p.grupo).filter(Boolean))) as string[];
+  const [categoriasExtras, setCategoriasExtras] = useState<string[]>([]);
+  
+  // Junta as categorias do banco com as novas que o usuário digitar agora
+  const todasCategorias = Array.from(new Set([...categoriasDoBanco, ...categoriasExtras])).sort();
+
+  // Estados do Formulário de Produtos
   const [nome, setNome] = useState("")
+  const [unidade, setUnidade] = useState("KG")
   const [grupo, setGrupo] = useState("")
-  const [unidade, setUnidade] = useState("")
   const [producaoInterna, setProducaoInterna] = useState(false)
-  
+  const [busca, setBusca] = useState("")
   const [editandoId, setEditandoId] = useState<number | null>(null)
-  const [salvando, setSalvando] = useState(false)
-  const [novaCategoria, setNovaCategoria] = useState("")
-  const [importando, setImportando] = useState(false)
 
-  useEffect(() => { carregarCategorias() }, [])
+  // Estados para Nova Categoria
+  const [novaCategoriaNome, setNovaCategoriaNome] = useState("")
 
-  const carregarCategorias = async () => {
-    const { data } = await supabase.from('categorias').select('*').order('nome')
-    if (data) setCategoriasDB(data)
-  }
+  // Seleciona a primeira categoria automaticamente se o menu estiver vazio
+  useEffect(() => {
+    if (!grupo && todasCategorias.length > 0) {
+      setGrupo(todasCategorias[0])
+    }
+  }, [todasCategorias, grupo])
 
-  const resetForm = () => {
-    setNome(""); setGrupo(""); setUnidade(""); setProducaoInterna(false); setEditandoId(null); setSalvando(false);
-  }
+  const handleSalvarInsumo = async () => {
+    if (isReadOnly) return toast.error("Período bloqueado para edições!")
+    if (!nome.trim() || !grupo) return toast.error("Preencha o nome e selecione uma categoria!")
 
-  const handleSalvarProduto = async () => {
-    if (isReadOnly) return toast.error("Período bloqueado!")
-    if (!nome.trim() || !grupo || !unidade) return toast.error("Preencha os campos!")
-    
-    setSalvando(true)
-    const payload = { nome: nome.trim(), unidade: unidade, grupo: grupo, producao_interna: producaoInterna }
+    const dados = { 
+      nome: nome.trim(), 
+      unidade: unidade, 
+      grupo: grupo,
+      producao_interna: producaoInterna 
+    }
+
+    toast.loading("Salvando produto...", { id: "salvar-prod" })
 
     if (editandoId) {
-      await supabase.from('produtos').update(payload).eq('id', editandoId)
-      toast.success("Atualizado!")
+      const { error } = await supabase.from('produtos').update(dados).eq('id', editandoId)
+      if (error) return toast.error("Erro ao atualizar: " + error.message, { id: "salvar-prod" })
+      toast.success("Produto atualizado!", { id: "salvar-prod" })
+      setEditandoId(null)
     } else {
-      await supabase.from('produtos').insert([payload])
-      toast.success("Salvo!")
+      const { error } = await supabase.from('produtos').insert([dados])
+      if (error) return toast.error("Erro ao cadastrar: " + error.message, { id: "salvar-prod" })
+      toast.success("Produto cadastrado com sucesso!", { id: "salvar-prod" })
     }
+
+    setNome("")
+    setUnidade("KG")
+    setProducaoInterna(false)
+    if (onRefresh) onRefresh() // Puxa do banco as informações frescas
+  }
+
+  const iniciarEdicao = (p: any) => {
+    setEditandoId(p.id)
+    setNome(p.nome)
+    setUnidade(p.unidade || "KG")
+    setGrupo(p.grupo || "")
+    setProducaoInterna(p.producao_interna || false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const cancelarEdicao = () => {
+    setEditandoId(null)
+    setNome("")
+    setUnidade("KG")
+    setProducaoInterna(false)
+  }
+
+  const handleDeletarProduto = async (id: number) => {
+    if (isReadOnly) return toast.error("Período bloqueado!")
+    if (!confirm("Tem certeza que deseja excluir este produto do sistema?")) return
+
+    const { error } = await supabase.from('produtos').delete().eq('id', id)
+    if (error) return toast.error("Erro ao excluir: " + error.message)
     
-    resetForm()
-    onRefresh()
+    toast.success("Produto excluído com sucesso!")
+    if (onRefresh) onRefresh()
   }
 
-  const handleDeletarProduto = async (id: number, nomeProd: string) => {
+  const handleSalvarNovaCategoria = () => {
     if (isReadOnly) return toast.error("Período bloqueado!")
-    if (window.confirm(`Apagar o produto ${nomeProd} definitivamente?`)) {
-      await supabase.from('produtos').delete().eq('id', id)
-      toast.success("Deletado!")
-      onRefresh()
+    if (!novaCategoriaNome.trim()) return toast.error("Digite o nome da categoria!")
+    
+    const nomeFormatado = novaCategoriaNome.trim()
+    
+    if (todasCategorias.includes(nomeFormatado)) {
+      return toast.error("Essa categoria já existe!")
     }
+
+    setCategoriasExtras([...categoriasExtras, nomeFormatado])
+    setGrupo(nomeFormatado) // Já deixa selecionada para o usuário
+    setNovaCategoriaNome("")
+    toast.success(`Categoria "${nomeFormatado}" pronta para uso!`)
   }
 
-  const handleSalvarCategoria = async () => {
+  const handleDeletarCategoria = (nomeCat: string) => {
     if (isReadOnly) return toast.error("Período bloqueado!")
-    if (!novaCategoria.trim()) return
-    await supabase.from('categorias').insert([{ nome: novaCategoria.trim() }])
-    setNovaCategoria("")
-    toast.success("Categoria salva!")
-    carregarCategorias()
-  }
-
-  const handleDeletarCategoria = async (id: number, nomeCat: string) => {
-    if (isReadOnly) return toast.error("Período bloqueado!")
-    if (window.confirm(`ATENÇÃO: Deseja apagar a categoria ${nomeCat}?`)) {
-      await supabase.from('categorias').delete().eq('id', id)
-      toast.success("Categoria deletada!")
-      carregarCategorias()
-      onRefresh()
+    
+    // Impede deletar se houver produtos usando ela
+    const produtosUsando = produtos?.filter((p: any) => p.grupo === nomeCat)
+    if (produtosUsando && produtosUsando.length > 0) {
+      return toast.error(`Não é possível apagar! Existem ${produtosUsando.length} produtos cadastrados no grupo "${nomeCat}". Mude o grupo deles primeiro.`)
     }
+
+    setCategoriasExtras(categoriasExtras.filter(c => c !== nomeCat))
+    toast.success("Categoria removida!")
   }
 
-  const handleImportarCSVProdutos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isReadOnly) return toast.error("Período bloqueado!")
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setImportando(true)
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string
-        const delimitador = text.includes(';') ? ';' : ','
-        const rows = text.split('\n').map(row => row.split(delimitador))
-
-        const headers = rows[0].map(h => h.trim().replace(/"/g, ''))
-        const nomeIdx = headers.indexOf('nome')
-        const unidIdx = headers.indexOf('unidade')
-        const grupoIdx = headers.indexOf('grupo')
-
-        if (nomeIdx === -1) {
-          alert("❌ CSV inválido! O ficheiro precisa ter no mínimo a coluna 'nome'.")
-          setImportando(false); return
-        }
-
-        const produtosParaInserir = []
-        for (let i = 1; i < rows.length; i++) {
-          if (!rows[i] || rows[i].length < 2) continue
-          
-          const nomeProd = rows[i][nomeIdx]?.replace(/"/g, '')
-          const unid = unidIdx !== -1 ? rows[i][unidIdx]?.replace(/"/g, '') : 'Unidade'
-          const grp = grupoIdx !== -1 ? rows[i][grupoIdx]?.replace(/"/g, '') : 'Outros'
-
-          if (nomeProd) {
-            produtosParaInserir.push({ nome: nomeProd, unidade: unid, grupo: grp })
-          }
-        }
-
-        if (produtosParaInserir.length === 0) {
-            alert("Nenhum produto encontrado no ficheiro."); setImportando(false); return
-        }
-
-        const { error } = await supabase.from('produtos').insert(produtosParaInserir)
-        if (error) throw error
-
-        alert(`✅ Sucesso! ${produtosParaInserir.length} produtos foram importados.`)
-        onRefresh()
-      } catch (error: any) {
-        alert("Erro ao importar: " + error.message)
-      } finally {
-        setImportando(false)
-        if(e.target) e.target.value = ''
-      }
-    }
-    reader.readAsText(file)
-  }
-
-  const byGroup = categoriasDB.reduce<Record<string, Produto[]>>((acc, c) => {
-    acc[c.nome] = produtos.filter((p) => p.grupo === c.nome)
-    return acc
-  }, {})
+  const produtosFiltrados = produtos?.filter((p: any) => p.nome.toLowerCase().includes(busca.toLowerCase())) || []
 
   return (
-    <div className="space-y-6">
-      <div className="flex gap-2 p-1 bg-muted rounded-xl w-fit">
-        <button onClick={() => setAba("produtos")} className={`px-6 py-2.5 rounded-lg font-bold transition-all ${aba === "produtos" ? "bg-white text-blue-600 shadow" : "text-slate-500"}`}>Produtos</button>
-        <button onClick={() => setAba("categorias")} className={`px-6 py-2.5 rounded-lg font-bold transition-all ${aba === "categorias" ? "bg-white text-blue-600 shadow" : "text-slate-500"}`}>Categorias</button>
+    <div className="space-y-6 font-sans pb-10">
+      <div className="flex justify-between items-center bg-white p-6 rounded-3xl border shadow-sm">
+        <div>
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2"><Package className="w-6 h-6 text-blue-600"/> Base de Cadastros</h2>
+          <p className="text-slate-500 text-sm font-medium">Gestão de ingredientes e suas classificações.</p>
+        </div>
       </div>
 
-      {aba === "categorias" ? (
-        <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-5 animate-in fade-in">
-          <h3 className="text-xl font-bold flex items-center gap-2"><Tags className="text-blue-600" /> Gerir Categorias</h3>
-          <div className="flex gap-3">
-            <input disabled={isReadOnly} value={novaCategoria} onChange={e => setNovaCategoria(e.target.value)} placeholder="Ex: Bebidas" className="flex-1 p-4 text-lg border-2 rounded-xl focus:border-blue-500 outline-none disabled:opacity-50" />
-            <button onClick={handleSalvarCategoria} disabled={!novaCategoria.trim() || isReadOnly} className="bg-emerald-600 text-white px-8 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50">Adicionar</button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-            {categoriasDB.map(c => (
-              <div key={c.id} className="p-4 bg-slate-50 border rounded-xl flex justify-between items-center">
-                <span className="font-bold text-lg text-slate-700">{c.nome}</span>
-                <button disabled={isReadOnly} onClick={() => handleDeletarCategoria(c.id, c.nome)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg disabled:opacity-30"><Trash2 size={20}/></button>
+      <div className="flex bg-white p-2 rounded-2xl shadow-sm border overflow-x-auto w-fit">
+        <button onClick={() => setAbaCadastros("insumos")} className={`flex items-center gap-2 min-w-[140px] justify-center py-3 px-6 rounded-xl font-bold text-sm transition-all ${abaCadastros === "insumos" ? "bg-blue-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"}`}>
+          <Layers className="w-4 h-4"/> Insumos
+        </button>
+        <button onClick={() => setAbaCadastros("categorias")} className={`flex items-center gap-2 min-w-[140px] justify-center py-3 px-6 rounded-xl font-bold text-sm transition-all ${abaCadastros === "categorias" ? "bg-blue-600 text-white shadow-lg" : "text-slate-500 hover:bg-slate-50"}`}>
+          <FolderTree className="w-4 h-4"/> Categorias
+        </button>
+      </div>
+
+      {abaCadastros === "insumos" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
+          <div className={`bg-white p-8 rounded-3xl border-2 h-fit sticky top-6 transition-all ${editandoId ? 'border-blue-500 shadow-xl' : 'border-slate-100 shadow-sm'}`}>
+            <h3 className="font-black text-lg text-slate-800 mb-6 flex items-center gap-2">
+              {editandoId ? <Edit2 className="w-5 h-5 text-blue-500"/> : <Plus className="w-5 h-5 text-emerald-500"/>}
+              {editandoId ? "Editar Produto" : "Adicionar Novo"}
+            </h3>
+
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase">Nome</label>
+                <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="Ex: Queijo Mussarela" />
               </div>
-            ))}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">Unidade</label>
+                  <select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none">
+                    <option value="KG">KG</option><option value="UN">UN</option><option value="L">L</option><option value="CX">CX</option><option value="PCT">PCT</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">Categoria</label>
+                  <select value={grupo} onChange={(e) => setGrupo(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:border-blue-500">
+                    {todasCategorias.length === 0 && <option value="">Sem grupos...</option>}
+                    {todasCategorias.map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <label className="flex items-center gap-3 p-4 border-2 rounded-xl bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors">
+                  <input 
+                    type="checkbox" 
+                    disabled={isReadOnly} 
+                    checked={producaoInterna} 
+                    onChange={(e) => setProducaoInterna(e.target.checked)} 
+                    className="w-5 h-5 accent-blue-600 cursor-pointer" 
+                  />
+                  <div>
+                    <p className="font-bold text-slate-800 flex items-center gap-2 text-sm">Fabricado na Loja <Beaker className="w-4 h-4 text-blue-500"/></p>
+                    <p className="text-[10px] text-slate-500 font-medium">Não gera custo duplo no CMV.</p>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex gap-2 mt-4">
+                {editandoId && (
+                  <button onClick={cancelarEdicao} className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"><X className="w-4 h-4"/> CANCELAR</button>
+                )}
+                <button onClick={handleSalvarInsumo} className={`flex-[2] py-4 rounded-xl font-black flex items-center justify-center gap-2 transition-all shadow-lg ${editandoId ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}>
+                  {editandoId ? <Save className="w-4 h-4"/> : <Plus className="w-4 h-4"/>}
+                  {editandoId ? "SALVAR ALTERAÇÃO" : "CADASTRAR"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 bg-white rounded-3xl border shadow-sm overflow-hidden flex flex-col h-[600px]">
+            <div className="p-6 border-b bg-slate-50 flex justify-between items-center gap-4">
+               <h3 className="font-black text-lg text-slate-800 flex items-center gap-2"><Layers className="w-5 h-5 text-blue-600"/> Insumos Cadastrados</h3>
+               <div className="relative w-64">
+                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"/><input type="text" placeholder="Buscar..." value={busca} onChange={e => setBusca(e.target.value)} className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-blue-500 shadow-sm" />
+               </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="sticky top-0 bg-white shadow-sm font-black text-[10px] uppercase text-slate-400 z-10">
+                  <tr><th className="py-4 px-6">Produto</th><th className="py-4 px-6">Categoria</th><th className="py-4 px-6 text-center">Unidade</th><th className="py-4 px-6 text-right">Ações</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {produtosFiltrados.length === 0 ? (
+                    <tr><td colSpan={4} className="py-10 text-center text-slate-400 font-bold">Nenhum produto encontrado.</td></tr>
+                  ) : (
+                    produtosFiltrados.map((p: any) => (
+                      <tr key={p.id} className="hover:bg-slate-50 transition-colors group">
+                        <td className="py-4 px-6 font-bold text-slate-700">
+                          {p.nome}
+                          {p.producao_interna && <span className="ml-2 bg-blue-100 text-blue-600 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Fabricado</span>}
+                        </td>
+                        <td className="py-4 px-6"><span className="px-2 py-1 rounded-md bg-slate-100 text-slate-500 text-[10px] font-bold uppercase">{p.grupo}</span></td>
+                        <td className="py-4 px-6 text-center font-black text-slate-400">{p.unidade}</td>
+                        <td className="py-4 px-6 text-right">
+                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => iniciarEdicao(p)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 className="w-4 h-4"/></button>
+                            <button onClick={() => handleDeletarProduto(p.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      ) : (
-        <div className="space-y-6 animate-in fade-in">
-          <div className={`bg-white rounded-2xl border-2 p-6 shadow-sm space-y-5 ${editandoId ? "border-blue-500 bg-blue-50/50" : "border-slate-200"}`}>
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h3 className="text-xl font-bold text-slate-800">{editandoId ? "Editar Produto" : "Novo Produto"}</h3>
-              <div className="flex items-center gap-3">
-                {!editandoId && (
-                  <div>
-                    <input type="file" accept=".csv" id="csv-produtos" className="hidden" onChange={handleImportarCSVProdutos} disabled={importando || isReadOnly} />
-                    <label htmlFor="csv-produtos" className={`cursor-pointer px-4 py-2 rounded-lg font-bold text-sm border shadow-sm flex items-center gap-2 transition-all ${isReadOnly ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-blue-100 text-blue-800 hover:bg-blue-200 border-blue-300'}`}>
-                       <Upload className="w-4 h-4"/>
-                       {importando ? "A ler..." : "📥 Importar Produtos"}
-                    </label>
-                  </div>
-                )}
-                {editandoId && <button onClick={resetForm} className="text-slate-400 hover:text-red-500"><X /></button>}
-              </div>
-            </div>
+      )}
 
-            <div className="space-y-2">
-              <label className="font-semibold block text-slate-600 text-sm">Nome do Produto</label>
-              <input type="text" disabled={isReadOnly} value={nome} onChange={(e) => setNome(e.target.value)} className="w-full p-3.5 rounded-xl border-2 bg-slate-50 focus:border-blue-500 outline-none disabled:opacity-50" />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="space-y-2">
-                <label className="font-semibold block text-slate-600 text-sm">Categoria Principal</label>
-                <select disabled={isReadOnly} value={grupo} onChange={(e) => setGrupo(e.target.value)} className="w-full p-3.5 rounded-xl border-2 bg-slate-50 focus:border-blue-500 outline-none disabled:opacity-50">
-                  <option value="">Selecione...</option>
-                  {categoriasDB.map((c) => <option key={c.id} value={c.nome}>{c.nome}</option>)}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="font-semibold block text-slate-600 text-sm">Unidade</label>
-                <select disabled={isReadOnly} value={unidade} onChange={(e) => setUnidade(e.target.value)} className="w-full p-3.5 rounded-xl border-2 bg-slate-50 focus:border-blue-500 outline-none disabled:opacity-50">
-                  <option value="">Selecione...</option>
-                  {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <label className="flex items-center gap-3 p-4 border-2 rounded-xl bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors">
-                <input 
-                  type="checkbox" 
-                  disabled={isReadOnly} 
-                  checked={producaoInterna} 
-                  onChange={(e) => setProducaoInterna(e.target.checked)} 
-                  className="w-5 h-5 accent-blue-600 cursor-pointer" 
-                />
-                <div>
-                  <p className="font-bold text-slate-800 flex items-center gap-2">Produto Fabricado na Loja (Subproduto) <Beaker className="w-4 h-4 text-blue-500"/></p>
-                  <p className="text-xs text-slate-500 font-medium">O sistema vai manter a contagem de estoque, mas ignorar o custo no CMV para evitar bitributação.</p>
+      {abaCadastros === "categorias" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+          <div className="bg-white p-8 rounded-3xl border shadow-sm h-fit">
+             <h3 className="font-black text-lg text-slate-800 mb-6 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-emerald-500"/> Nova Categoria
+             </h3>
+             <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase">Nome do Grupo</label>
+                  <input type="text" value={novaCategoriaNome} onChange={(e) => setNovaCategoriaNome(e.target.value)} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="Ex: Queijos Finos" />
                 </div>
-              </label>
-            </div>
-
-            <button onClick={handleSalvarProduto} disabled={!nome.trim() || !grupo || !unidade || salvando || isReadOnly} className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-50 flex justify-center gap-2 transition-colors">
-              {salvando ? "A Guardar..." : editandoId ? <><CheckCircle2 /> Atualizar</> : <><PlusCircle /> Salvar</>}
-            </button>
+                <button onClick={handleSalvarNovaCategoria} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black shadow-lg shadow-emerald-600/30 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+                  <Plus className="w-4 h-4"/> ADICIONAR GRUPO
+                </button>
+             </div>
           </div>
 
-          <div className="space-y-6">
-            {categoriasDB.map((c) => {
-              const lista = byGroup[c.nome]
-              if (!lista || lista.length === 0) return null
-              return (
-                <div key={c.id} className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 bg-slate-50 border-b flex items-center gap-2"><Package className="text-blue-600" /><h4 className="text-lg font-bold text-slate-700">{c.nome}</h4><span className="ml-auto text-sm font-medium bg-white px-2 py-0.5 rounded-full border text-slate-500">{lista.length} itens</span></div>
-                  <ul className="divide-y divide-slate-100">
-                    {lista.map((p) => (
-                      <li key={p.id} className="flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-700 block">{p.nome}</span>
-                            {p.producao_interna && <span className="bg-blue-100 text-blue-600 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">Fabricado</span>}
-                          </div>
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{p.unidade}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button disabled={isReadOnly} onClick={() => {setNome(p.nome); setGrupo(p.grupo); setUnidade(p.unidade); setProducaoInterna(p.producao_interna); setEditandoId(p.id); window.scrollTo(0,0)}} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg disabled:opacity-30"><Pencil size={20}/></button>
-                          <button disabled={isReadOnly} onClick={() => handleDeletarProduto(p.id, p.nome)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg disabled:opacity-30"><Trash2 size={20}/></button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )
-            })}
+          <div className="bg-white rounded-3xl border shadow-sm overflow-hidden flex flex-col h-[500px]">
+             <div className="p-6 border-b bg-slate-50">
+               <h3 className="font-black text-lg text-slate-800 flex items-center gap-2"><FolderTree className="w-5 h-5 text-blue-600"/> Grupos Ativos</h3>
+             </div>
+             <div className="flex-1 overflow-y-auto">
+               <table className="w-full text-sm text-left">
+                 <thead className="sticky top-0 bg-white shadow-sm font-black text-[10px] uppercase text-slate-400">
+                   <tr><th className="py-4 px-6">Nome do Grupo</th><th className="py-4 px-6 text-right">Ação</th></tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-50">
+                   {todasCategorias?.map((cat: string) => (
+                     <tr key={cat} className="hover:bg-slate-50 transition-colors group">
+                       <td className="py-4 px-6 font-bold text-slate-700"><Tag className="w-3 h-3 inline-block mr-2 text-slate-400"/>{cat}</td>
+                       <td className="py-4 px-6 text-right">
+                         <button onClick={() => handleDeletarCategoria(cat)} className="p-2 text-slate-300 hover:text-red-600 bg-white shadow-sm border border-slate-100 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4"/></button>
+                       </td>
+                     </tr>
+                   ))}
+                   {todasCategorias.length === 0 && (
+                     <tr><td colSpan={2} className="py-10 text-center text-slate-400 font-bold">Nenhuma categoria cadastrada.</td></tr>
+                   )}
+                 </tbody>
+               </table>
+             </div>
           </div>
         </div>
       )}
