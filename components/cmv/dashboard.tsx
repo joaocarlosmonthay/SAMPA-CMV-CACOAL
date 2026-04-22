@@ -188,7 +188,6 @@ export function Dashboard({ dataInicio, dataFim, lancamentos, contagemInicial, c
         <div className="bg-blue-600 p-5 rounded-3xl shadow-blue-200 shadow-lg text-white relative">
           <p className="text-[10px] font-black text-blue-100 uppercase mb-1">(=) CMV Realizado</p>
           <p className="text-2xl font-black">{formatBRL(cmvRealR$)}</p>
-          <span className="absolute bottom-2 right-4 text-[8px] text-blue-200 font-bold">*Exclui Subprodutos Fabricados</span>
         </div>
       </div>
 
